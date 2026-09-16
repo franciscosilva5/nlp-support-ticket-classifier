@@ -7,130 +7,122 @@ from sentence_transformers import SentenceTransformer
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = BASE_DIR / "models"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 @st.cache_resource
-def carregar_modelos():
-    modelo_embeddings = SentenceTransformer("all-MiniLM-L6-v2")
-
-    classificador = joblib.load(
-        MODELS_DIR / "semantic_intent_classifier.joblib"
-    )
-
-    intent_para_categoria = joblib.load(
-        MODELS_DIR / "intent_to_category.joblib"
-    )
-
-    return modelo_embeddings, classificador, intent_para_categoria
+def load_models():
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+    classifier = joblib.load(MODELS_DIR / "semantic_intent_classifier.joblib")
+    intent_to_category = joblib.load(MODELS_DIR / "intent_to_category.joblib")
+    return embedding_model, classifier, intent_to_category
 
 
-modelo_embeddings, classificador, intent_para_categoria = carregar_modelos()
+def display_intent(intent: str) -> str:
+    return intent.replace("_", " ").title()
 
 
-def prever(texto):
-    embedding = modelo_embeddings.encode([texto])
+def predict_top3(text: str):
+    embedding = embedding_model.encode([text], convert_to_numpy=True)
+    probabilities = classifier.predict_proba(embedding)[0]
+    classes = classifier.classes_
+    top_indices = probabilities.argsort()[-3:][::-1]
 
-    probabilidades = classificador.predict_proba(embedding)[0]
-    classes = classificador.classes_
-
-    indices_top3 = probabilidades.argsort()[-3:][::-1]
-
-    resultados = []
-
-    for indice in indices_top3:
-        intent = classes[indice]
-
-        resultados.append({
-            "intent": intent,
-            "category": intent_para_categoria[intent],
-            "confidence": float(probabilidades[indice]) * 100
-        })
-
-    return resultados
+    return [
+        {
+            "intent": classes[index],
+            "category": intent_to_category[classes[index]],
+            "confidence": float(probabilities[index]) * 100,
+        }
+        for index in top_indices
+    ]
 
 
 st.set_page_config(
     page_title="AI Support Ticket Classifier",
     page_icon="🤖",
-    layout="centered"
+    layout="centered",
 )
 
-st.title("AI Support Ticket Classifier")
+try:
+    embedding_model, classifier, intent_to_category = load_models()
+except Exception as exc:
+    st.error("The model could not be loaded. Please try again later.")
+    st.exception(exc)
+    st.stop()
 
+st.title("🤖 AI Support Ticket Classifier")
 st.write(
-    "Classify a customer support message using semantic embeddings "
-    "and machine learning."
+    "Classify an English customer-support message by intent and category "
+    "using semantic sentence embeddings."
 )
 
-texto = st.text_area(
-    "Customer message",
-    placeholder="Example: My order has not arrived yet",
-    height=140
+with st.expander("How it works"):
+    st.write(
+        "The app encodes the message with `all-MiniLM-L6-v2` and sends the "
+        "384-dimensional embedding to a Logistic Regression classifier trained "
+        "on 27 support intents."
+    )
+    st.caption(
+        "This is a closed-set classifier: every message is assigned to one of "
+        "the known intents, even when the message is outside the training domain."
+    )
+
+example = st.selectbox(
+    "Optional example",
+    [
+        "Write my own message",
+        "I forgot my password",
+        "My order has not arrived yet",
+        "Can you change the address for my order?",
+        "I need help",
+    ],
 )
 
-if st.button("Classify", type="primary"):
-    if not texto.strip():
+default_text = "" if example == "Write my own message" else example
+
+with st.form("classifier_form"):
+    text = st.text_area(
+        "Customer message",
+        value=default_text,
+        placeholder="Example: I forgot my password",
+        height=140,
+    )
+    submitted = st.form_submit_button("Classify", type="primary")
+
+if submitted:
+    if not text.strip():
         st.warning("Please enter a customer message.")
-
     else:
-        resultados = prever(texto)
-
-        principal = resultados[0]
-        confianca = principal["confidence"]
+        results = predict_top3(text.strip())
+        primary = results[0]
+        confidence = primary["confidence"]
 
         st.subheader("Prediction")
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Category", primary["category"])
+        col2.metric("Intent", display_intent(primary["intent"]))
+        col3.metric("Probability", f"{confidence:.1f}%")
 
-        with col1:
-            st.metric(
-                "Category",
-                principal["category"]
-            )
-
-        with col2:
-            st.metric(
-                "Intent",
-                principal["intent"]
-            )
-
-        st.metric(
-            "Model confidence",
-            f"{confianca:.1f}%"
-        )
-
-        if confianca >= 70:
+        if confidence >= 70:
             st.success("High-confidence prediction.")
-
-        elif confianca >= 40:
-            st.warning(
-                "Medium-confidence prediction. "
-                "The message may be ambiguous."
-            )
-
+        elif confidence >= 40:
+            st.warning("Medium-confidence prediction — the message may be ambiguous.")
         else:
-            st.error(
-                "Low-confidence prediction. "
-                "Human review is recommended."
-            )
+            st.error("Low-confidence prediction — human review is recommended.")
 
         st.subheader("Top 3 predictions")
-
-        for i, resultado in enumerate(resultados, start=1):
+        for rank, result in enumerate(results, start=1):
             st.write(
-                f"**{i}. {resultado['intent']}** "
-                f"— {resultado['category']} "
-                f"— {resultado['confidence']:.1f}%"
+                f"**{rank}. {display_intent(result['intent'])}** "
+                f"(`{result['intent']}`) — {result['category']} — "
+                f"{result['confidence']:.1f}%"
             )
-
-            st.progress(
-                min(resultado["confidence"] / 100, 1.0)
-            )
+            st.progress(min(result["confidence"] / 100, 1.0))
 
 st.divider()
-
 st.caption(
-    "Model: all-MiniLM-L6-v2 sentence embeddings + "
-    "Logistic Regression. Confidence values are model probability "
-    "estimates and should not be interpreted as certainty."
+    "Final model: all-MiniLM-L6-v2 sentence embeddings + Logistic Regression. "
+    "Probability estimates should not be interpreted as certainty."
 )
