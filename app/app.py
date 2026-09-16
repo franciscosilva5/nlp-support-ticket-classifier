@@ -100,10 +100,14 @@ if submitted:
 
         st.subheader("Prediction")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         col1.metric("Category", primary["category"])
-        col2.metric("Intent", display_intent(primary["intent"]))
-        col3.metric("Probability", f"{confidence:.1f}%")
+        col2.metric("Probability", f"{confidence:.1f}%")
+
+        st.markdown(
+            f"**Intent:** {display_intent(primary['intent'])} "
+            f"(`{primary['intent']}`)"
+        )
 
         if confidence >= 70:
             st.success("High-confidence prediction.")
