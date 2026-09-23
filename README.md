@@ -119,6 +119,36 @@ Each message becomes a 384-dimensional embedding, which is then classified with 
 
 The deployed application uses this semantic model.
 
+## Design Decisions and Trade-offs
+
+The project compares lexical and semantic text-classification approaches instead of selecting a model only from the highest held-out accuracy.
+
+**TF-IDF + Linear SVM achieved the strongest test metrics**, but TF-IDF relies heavily on the vocabulary and phrasing observed during training.
+
+**Sentence embeddings were selected for the deployed application** because manual paraphrase tests showed better behavior on some differently worded support requests. This choice prioritizes semantic generalization over the small difference in benchmark accuracy.
+
+**Logistic Regression is used on top of sentence embeddings** because it provides probability estimates and remains simple to inspect and deploy.
+
+**Confidence thresholds are application rules.** High, medium and low confidence bands help communicate uncertainty but are not guarantees that a prediction is correct.
+
+**The classifier is closed-set.** Every message is assigned to one of the known intents, so low-confidence outputs are surfaced for human review rather than treated as reliable automatic classifications.
+
+## Automated Tests
+
+The project includes automated tests covering:
+
+- model artifact loading
+- expected embedding dimensionality
+- intent-label formatting
+- top-k ranking behavior
+- classifier probability output
+
+Run:
+
+pytest -q
+
+GitHub Actions automatically runs the test suite on pushes and pull requests to main.
+
 ## Project structure
 
 ```text
@@ -194,7 +224,6 @@ Python · pandas · scikit-learn · Sentence Transformers · Hugging Face · Str
 - Fine-tune a transformer for intent classification
 - Add explicit out-of-distribution detection
 - Add multilingual support
-- Add automated tests and CI
 - Add monitoring and feedback-driven retraining
 
 ## Licenses and attribution
