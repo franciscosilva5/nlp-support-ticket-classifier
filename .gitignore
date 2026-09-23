@@ -7,3 +7,4 @@ __pycache__/
 .streamlit/secrets.toml
 data/raw/*.csv
 !data/raw/.gitkeep
+*.backup
