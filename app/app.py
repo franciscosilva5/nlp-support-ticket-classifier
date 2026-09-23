@@ -4,6 +4,12 @@ import joblib
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 
+from src.inference import (
+    display_intent,
+    load_classifier_artifacts,
+    predict_top3,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = BASE_DIR / "models"
@@ -12,30 +18,19 @@ EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 @st.cache_resource
 def load_models():
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    classifier = joblib.load(MODELS_DIR / "semantic_intent_classifier.joblib")
-    intent_to_category = joblib.load(MODELS_DIR / "intent_to_category.joblib")
-    return embedding_model, classifier, intent_to_category
+    embedding_model = SentenceTransformer(
+        EMBEDDING_MODEL
+    )
 
+    classifier, intent_to_category = (
+        load_classifier_artifacts()
+    )
 
-def display_intent(intent: str) -> str:
-    return intent.replace("_", " ").title()
-
-
-def predict_top3(text: str):
-    embedding = embedding_model.encode([text], convert_to_numpy=True)
-    probabilities = classifier.predict_proba(embedding)[0]
-    classes = classifier.classes_
-    top_indices = probabilities.argsort()[-3:][::-1]
-
-    return [
-        {
-            "intent": classes[index],
-            "category": intent_to_category[classes[index]],
-            "confidence": float(probabilities[index]) * 100,
-        }
-        for index in top_indices
-    ]
+    return (
+        embedding_model,
+        classifier,
+        intent_to_category,
+    )
 
 
 st.set_page_config(
@@ -94,7 +89,12 @@ if submitted:
     if not text.strip():
         st.warning("Please enter a customer message.")
     else:
-        results = predict_top3(text.strip())
+        results = predict_top3(
+            text.strip(),
+            embedding_model,
+            classifier,
+            intent_to_category,
+        )
         primary = results[0]
         confidence = primary["confidence"]
 
